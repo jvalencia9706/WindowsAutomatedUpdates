@@ -1,0 +1,101 @@
+Function InstallWindowsModules
+{
+    # Installs NuGet with Forced
+    Install-PackageProvider -Name NuGet -Force
+
+    # Trusts Microsofts PSGallery
+    Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+    
+    # Install PSWindowsUpdate Module
+    Install-Module PSWindowsUpdate
+
+    # Sets Progress file to 1, to indicate modules etc. are installed.
+    Set-Content C:\AutoUpdates\Progress.txt -Value 1
+
+}
+
+Function InstallWindowsUpdates
+{
+    # Gets latest Windows updates
+    Get-WindowsUpdate | Out-File C:\AutoUpdates\History\Updates_"$((Get-Date).ToString('dd-MM-yyyy_HH.mm.ss'))".txt
+
+    #Installs updates, accepts all automatically and installs
+    Install-WindowsUpdate -Install -AcceptAll -IgnoreReboot
+
+    #Get-WindowsUpdates
+	
+	#Writes an event log of what was installed. 
+   
+    $dir = "C:\AutoUpdates\History"
+    $latest = Get-ChildItem -Path $dir | Sort-Object LastAccessTime -Descending| Select-Object -First 1
+    $latest.name
+
+    #Creates variable, then can use on the Write-EventLog
+    $testLine = Get-Content $dir\$latest |Out-String 
+    IF ([string]::IsNullOrEmpty($testLine))
+    {
+    $testLine = "You are all up to date"
+    }
+    else
+    {
+    $testLine = Get-Content $dir\$latest |Out-String
+    }
+    Write-EventLog -LogName "AutomatedWULog" -Source "AutomatedWUScript" -EventID 100 -EntryType Information -Message $testLine -Category 1 -RawData 10,20
+}
+
+
+# Checks if folder "AutoUpdates already exists on the server. If it doesn't it creates it."
+$ChkPath = "C:\AutoUpdates"
+$PathExists = Test-Path $ChkPath
+If ($PathExists -eq $false)
+{
+    mkdir C:\AutoUpdates
+    mkdir C:\AutoUpdates\History
+}
+else
+{
+    # Do nothing
+}
+
+#Checks if Event Log has been already created on this server. It not it creates it. 
+$LogCheck =[System.Diagnostics.EventLog]::SourceExists("AutomatedWULog");
+ 
+ if ($LogCheck -eq $false)
+ {
+  New-EventLog -source AutomatedWUScript -LogName AutomatedWULog -MessageResourceFile c:\WINDOWS\Microsoft.NET\Framework\v4.0.30319\EventLogMessages.dll
+ }
+ else
+ {
+  #Do Nothing
+ }
+
+
+$ChkFile = "C:\AutoUpdates\Progress.txt"
+$FileExists = Test-Path $ChkFile
+If ($FileExists -eq $false)
+{
+    New-Item C:\AutoUpdates\Progress.txt
+    Set-Content C:\AutoUpdates\Progress.txt -Value 0
+}
+else
+{
+    # Do nothing
+}
+
+
+
+# Reads the file for status
+# This is the logic used to control the installation status of the server.
+$Status = Get-Content C:\AutoUpdates\Progress.txt -First 1
+
+If ($Status -eq 0) 
+{
+    # Installs required modules
+    InstallWindowsModules
+    InstallWindowsUpdates
+}
+elseif ($Status -eq 1)
+{
+    # Installs windows updates
+    InstallWindowsUpdates
+}
